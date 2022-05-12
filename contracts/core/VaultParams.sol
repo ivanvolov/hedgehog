@@ -6,19 +6,19 @@ import "@openzeppelin/contracts/math/Math.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import {IUniswapV3Pool} from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 
-import "./Constants.sol";
+import "../libraries/Constants.sol";
 
 import "hardhat/console.sol";
 
 abstract contract VaultParams {
-    using SafeMath for uint256;
+    // using SafeMath for uint256;
 
     //@dev Uniswap pools tick spacing
     int24 public immutable tickSpacingEthUsdc;
     int24 public immutable tickSpacingOsqthEth;
 
     //@dev twap period to use for rebalance calculations
-    uint32 public twapPeriod = 420 seconds;
+    uint32 public twapPeriod = 420;
 
     //@dev total amount of deposited wETH
     uint256 public totalEthDeposited;
@@ -30,6 +30,7 @@ abstract contract VaultParams {
     address public governance;
 
     //@dev lower and upper ticks in Uniswap pools
+    // Removed
     int24 public orderEthUsdcLower;
     int24 public orderEthUsdcUpper;
     int24 public orderOsqthEthLower;
@@ -101,12 +102,20 @@ abstract contract VaultParams {
         All strategy getters and setters will be here
      */
 
-    /// @dev Rounds tick down towards negative infinity so that it's a multiple
-    /// of `tickSpacing`.
-    function _floor(int24 tick, int24 tickSpacing) internal pure returns (int24) {
-        int24 compressed = tick / tickSpacing;
-        if (tick < 0 && tick % tickSpacing != 0) compressed--;
-        return compressed * tickSpacing;
+    // TODO: remove on main
+    /**
+     * Used to for _getTotalAmounts unit testing
+     */
+    function setTotalAmountsBoundaries(
+        int24 _orderEthUsdcLower,
+        int24 _orderEthUsdcUpper,
+        int24 _orderOsqthEthLower,
+        int24 _orderOsqthEthUpper
+    ) public {
+        orderEthUsdcLower = _orderEthUsdcLower;
+        orderEthUsdcUpper = _orderEthUsdcUpper;
+        orderOsqthEthLower = _orderOsqthEthLower;
+        orderOsqthEthUpper = _orderOsqthEthUpper;
     }
 
     /// @dev Casts uint256 to uint128 with overflow check.
