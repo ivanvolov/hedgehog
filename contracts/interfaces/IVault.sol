@@ -13,18 +13,12 @@ interface IVault {
         uint256
     ) external returns (uint256);
 
-    // function withdraw(
-    //     uint256,
-    //     uint256,
-    //     uint256,
-    //     uint256
-    // )
-    //     external
-    //     returns (
-    //         uint256,
-    //         uint256,
-    //         uint256
-    //     );
+    function withdraw(
+        uint256,
+        uint256,
+        uint256,
+        uint256
+    ) external;
 }
 
 interface IAuction {

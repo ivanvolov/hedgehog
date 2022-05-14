@@ -172,6 +172,48 @@ contract VaultMath is IERC20, ERC20, VaultParams, ReentrancyGuard, IUniswapV3Min
         return vaultMathTest._calcSharesAndAmounts(params);
     }
 
+    function _getWithdrawAmounts(uint256 shares, uint256 totalSupply)
+        public
+        returns (
+            uint256,
+            uint256,
+            uint256
+        )
+    {
+        console.log("totalSupply %s", totalSupply);
+
+        uint256 unusedAmountEth = getBalance(Constants.weth).mul(shares).div(totalSupply);
+        uint256 unusedAmountUsdc = getBalance(Constants.usdc).mul(shares).div(totalSupply);
+        uint256 unusedAmountOsqth = getBalance(Constants.osqth).mul(shares).div(totalSupply);
+
+        //withdraw user share of tokens from the lp positions in current proportion
+        (uint256 amountEth0, uint256 amountUsdc) = _burnLiquidityShare(
+            Constants.poolEthUsdc,
+            orderEthUsdcLower,
+            orderEthUsdcUpper,
+            shares,
+            totalSupply
+        );
+        (uint256 amountOsqth, uint256 amountEth1) = _burnLiquidityShare(
+            Constants.poolEthOsqth,
+            orderOsqthEthLower,
+            orderOsqthEthUpper,
+            shares,
+            totalSupply
+        );
+
+        // Sum up total amounts owed to recipient
+        return (
+            unusedAmountEth.add(amountEth0).add(amountEth1),
+            unusedAmountUsdc.add(amountUsdc),
+            unusedAmountOsqth.add(amountOsqth)
+        );
+    }
+
+    uint256 public test1;
+    uint256 public test2;
+    uint256 public test3;
+
     //@dev <tested>
     /**
      * @notice Calculates the vault's total holdings of token0 and token1 - in
@@ -307,17 +349,33 @@ contract VaultMath is IERC20, ERC20, VaultParams, ReentrancyGuard, IUniswapV3Min
      * @return auction trigger timestamp
      */
     function _isTimeRebalance() public view returns (bool, uint256) {
+        console.log("_isTimeRebalance => timeAtLastRebalance: %s", timeAtLastRebalance);
         uint256 auctionTriggerTime = timeAtLastRebalance.add(rebalanceTimeThreshold);
 
+        console.log("_isTimeRebalance => block.timestamp: %s", block.timestamp);
         return (block.timestamp >= auctionTriggerTime, auctionTriggerTime);
     }
 
-    /** //TODO
+    /**
      * @notice check if hedging based on price threshold is allowed
      * @param _auctionTriggerTime timestamp where auction started
      * @return true if hedging is allowed
      */
     function _isPriceRebalance(uint256 _auctionTriggerTime) public returns (bool) {
+        //if (_auctionTriggerTime < timeAtLastRebalance) return false;
+        //uint32 secondsToTrigger = uint32(block.timestamp.sub(_auctionTriggerTime));
+        //uint256 ethUsdcPriceAtTrigger = IOracle(oracle).getHistoricalTwap(
+        //    Constants.poolEthUsdc,
+        //    address(Constants.weth),
+        //    address(Constants.usdc),
+        //    secondsToTrigger + twapPeriod,
+        //    secondsToTrigger
+        //);
+
+        //uint256 cachedRatio = ethUsdcPriceAtTrigger.wdiv(ethPriceAtLastRebalance);
+        //uint256 priceTreshold = cachedRatio > 1e18 : (cachedRatio).sub(1e18) : uint256(1e18).sub(cachedRatio);
+        //return priceTreshold >= rebalancePriceThreshold
+
         return true;
     }
 
@@ -355,7 +413,7 @@ contract VaultMath is IERC20, ERC20, VaultParams, ReentrancyGuard, IUniswapV3Min
         )
     {
         (uint256 ethAmount, uint256 usdcAmount, uint256 osqthAmount) = _getTotalAmounts();
-        (uint256 _auctionEthUsdcPrice, uint256 _auctionOsqthEthPrice) = _getPriceMultiplier(
+        (uint256 _auctionEthUsdcPrice, uint256 _auctionOsqthEthPrice) = getAuctionPrices(
             _auctionTriggerTime,
             _currentEthUsdcPrice,
             _currentOsqthEthPrice,
@@ -381,7 +439,7 @@ contract VaultMath is IERC20, ERC20, VaultParams, ReentrancyGuard, IUniswapV3Min
      * @param _currentOsqthEthPrice current oSQTH/ETH price
      * @param _isPriceInc true if price increased (determine auction direction)
      */
-    function _getPriceMultiplier(
+    function getAuctionPrices(
         uint256 _auctionTriggerTime,
         uint256 _currentEthUsdcPrice,
         uint256 _currentOsqthEthPrice,
@@ -393,7 +451,7 @@ contract VaultMath is IERC20, ERC20, VaultParams, ReentrancyGuard, IUniswapV3Min
             auctionTime,
             _auctionTriggerTime,
             _isPriceInc,
-            uint256(1648646659)
+            block.timestamp
         );
 
         return vaultMathTest._getAuctionPrices(params);

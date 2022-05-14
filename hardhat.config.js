@@ -1,10 +1,6 @@
 require("@nomiclabs/hardhat-waffle");
-const fs = require('fs');
-const path = require('path');
-const dotenv = require('dotenv');
 
-const envDir = path.join(__dirname, '.env');
-const { ALCHEMY_KEY } = dotenv.parse(fs.readFileSync(envDir));
+const { getForkingParams } = require('./hardhat.helpers');
 
 task("accounts", "Prints the list of accounts", async (taskArgs, hre) => {
   const accounts = await hre.ethers.getSigners();
@@ -20,11 +16,9 @@ const CHAIN_IDS = {
 module.exports = {
   networks: {
     hardhat: {
+      allowUnlimitedContractSize: true,
       chainId: CHAIN_IDS.hardhat,
-      forking: {
-        url: `https://eth-mainnet.alchemyapi.io/v2/${ALCHEMY_KEY}`,
-        blockNumber: 14487787,
-      },
+      forking: getForkingParams()
     },
   },
   solidity: {
@@ -43,6 +37,9 @@ module.exports = {
       },
       {
         version: "0.5.0"
+      },
+      {
+        version: "0.7.5"
       },
     ]
   }

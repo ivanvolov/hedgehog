@@ -209,8 +209,8 @@ describe("VaultMath", function () {
         assert(amount[0].toString() == "8394376743052387", `test_sute: sub 1`);
     });
 
-    it("_getPriceMultiplier", async function () {
-        const amount = await contract._getPriceMultiplier(
+    it("getAuctionPrices", async function () {
+        const amount = await contract.getAuctionPrices(
             "1632160192",
             "2500000000000000000000",
             "199226590621515000",
@@ -279,4 +279,19 @@ describe("VaultMath", function () {
         assert(assertWP(amount[2].toString(), "32743712092", 0), `test_sute: sub 3`)
         assert(assertWP(amount[3].toString(), "32849750909396941650", 0), `test_sute: sub 4`)
     });
+
+    // it("_getWithdrawAmounts", async function () {
+    //     const tx = await contract._getWithdrawAmounts(
+    //         "124875791768594084851645",
+    //         "124875791768594084851645",
+    //     );
+    //     await tx.wait()
+
+    //     console.log(await contract.test1());
+    //     console.log(await contract.test2());
+    //     console.log(await contract.test3());
+    //     // assert(assertWP(, "18410690015258689749"), `test_sute: sub 2`)
+    //     // assert(assertWP(amount[1].toString(), "32743712092", 0), `test_sute: sub 3`)
+    //     // assert(assertWP(amount[2].toString(), "32849750909396941650", 0), `test_sute: sub 4`)
+    // });
 });

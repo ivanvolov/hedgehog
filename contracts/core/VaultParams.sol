@@ -20,9 +20,6 @@ abstract contract VaultParams {
     //@dev twap period to use for rebalance calculations
     uint32 public twapPeriod = 420;
 
-    //@dev total amount of deposited wETH
-    uint256 public totalEthDeposited;
-
     //@dev max amount of wETH that strategy accept for deposit
     uint256 public cap;
 
@@ -96,6 +93,8 @@ abstract contract VaultParams {
         targetOsqthShare = _targetOsqthShare;
 
         governance = msg.sender;
+
+        timeAtLastRebalance = 0;
     }
 
     /**
@@ -116,6 +115,14 @@ abstract contract VaultParams {
         orderEthUsdcUpper = _orderEthUsdcUpper;
         orderOsqthEthLower = _orderOsqthEthLower;
         orderOsqthEthUpper = _orderOsqthEthUpper;
+    }
+
+    // TODO: remove on main
+    /**
+     * Used to for unit testing
+     */
+    function setTimeAtLastRebalance(uint256 _timeAtLastRebalance) public {
+        timeAtLastRebalance = _timeAtLastRebalance;
     }
 
     /// @dev Casts uint256 to uint128 with overflow check.
