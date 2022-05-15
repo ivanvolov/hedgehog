@@ -1,21 +1,13 @@
 // SPDX-License-Identifier: Unlicense
 
-pragma solidity ^0.6.6;
-pragma experimental ABIEncoderV2;
+pragma solidity =0.7.6;
+pragma abicoder v2;
 
-import "@openzeppelin/contracts/math/Math.sol";
-import "@openzeppelin/contracts/math/SafeMath.sol";
-import "@uniswap/v3-core/contracts/libraries/TickMath.sol";
-
-import "../../libraries/StrategyMath.sol";
 import "../../libraries/Constants.sol";
 
 import "hardhat/console.sol";
 
 contract VaultMathOracle {
-    // using SafeMath for uint256;
-    // using StrategyMath for uint256;
-
     //@dev <tested>
     function _getTwap(
         address poolEthOsqth,

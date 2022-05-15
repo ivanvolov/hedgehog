@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: agpl-3.0
-pragma solidity ^0.7.5;
+pragma solidity ^0.7.6;
 
 pragma abicoder v2;
 
+import {Math} from "@openzeppelin/contracts/math/Math.sol";
+import {SafeMath} from "@openzeppelin/contracts/math/SafeMath.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
-import "@openzeppelin/contracts/math/Math.sol";
-import "@openzeppelin/contracts/math/SafeMath.sol";
-
 import "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
 import {IUniswapV3Pool} from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import "@uniswap/v3-periphery/contracts/libraries/TransferHelper.sol";
@@ -42,7 +41,7 @@ contract V3Helper {
     using SafeERC20 for ERC20;
     using SafeMath for uint256;
 
-    uint32 twapPeriod = 1 seconds;
+    uint32 twapPeriod = 420 seconds;
 
     ISwapRouter immutable swapRouter = ISwapRouter(0xE592427A0AEce92De3Edee1F18E0157C05861564);
 
@@ -60,7 +59,24 @@ contract V3Helper {
             sqrtPriceLimitX96: 0
         });
         uint256 usdcFromSwap = swapRouter.exactInputSingle(paramsWethUSDC);
-        console.log("usdcFromSwap:", usdcFromSwap);
+        // console.log("usdcFromSwap:", usdcFromSwap);
+    }
+
+    function swapR(uint256 amount) public {
+        // sell weth for usdc
+        TransferHelper.safeApprove(address(usdc), address(swapRouter), amount);
+        ISwapRouter.ExactInputSingleParams memory paramsWethUSDC = ISwapRouter.ExactInputSingleParams({
+            tokenIn: address(usdc),
+            tokenOut: address(weth),
+            fee: 3000,
+            recipient: address(this),
+            deadline: block.timestamp,
+            amountIn: amount,
+            amountOutMinimum: 0,
+            sqrtPriceLimitX96: 0
+        });
+        uint256 usdcFromSwap = swapRouter.exactInputSingle(paramsWethUSDC);
+        // console.log("usdcFromSwap:", usdcFromSwap);
     }
 
     /// @dev Fetches current price in ticks from Uniswap pool.
@@ -72,5 +88,11 @@ contract V3Helper {
         // How much usdc I get for 1 WETH
         console.log("block.timestamp", block.timestamp);
         return (oracle.getTwap(poolEthUsdc, address(weth), address(usdc), twapPeriod, false), getTick(poolEthUsdc));
+    }
+
+    function getTwapR() public view returns (uint256, int24) {
+        // How much usdc I get for 1 WETH
+        console.log("block.timestamp", block.timestamp);
+        return (oracle.getTwap(poolEthUsdc, address(usdc), address(weth), twapPeriod, false), getTick(poolEthUsdc));
     }
 }

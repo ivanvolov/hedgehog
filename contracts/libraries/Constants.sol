@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Unlicense
-pragma solidity ^0.6.6;
+pragma solidity =0.7.6;
 
 import {IUniswapV3Pool} from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -22,9 +22,6 @@ library Constants {
     IOracle public constant oracle = IOracle(0x65D66c76447ccB45dAf1e8044e918fA786A483A1);
 
     struct SharesInfo {
-        uint256 targetEthShare;
-        uint256 targetUsdcShare;
-        uint256 targetOsqthShare;
         uint256 totalSupply;
         uint256 _amountEth;
         uint256 _amountUsdc;
@@ -45,11 +42,20 @@ library Constants {
         uint256 timestamp;
     }
 
-    struct DeltasInfo {
-        uint256 osqthEthPrice;
-        uint256 ethUsdcPrice;
-        uint256 usdcAmount;
-        uint256 ethAmount;
-        uint256 osqthAmount;
+    struct Boundaries {
+        int24 ethUsdcLower;
+        int24 ethUsdcUpper;
+        int24 osqthEthLower;
+        int24 osqthEthUpper;
+    }
+
+    struct AuctionParams {
+        bool isPriceInc;
+        uint256 deltaEth;
+        uint256 deltaUsdc;
+        uint256 deltaOsqth;
+        Boundaries boundaries;
+        uint128 liquidityEthUsdc;
+        uint128 liquidityOsqthEth;
     }
 }

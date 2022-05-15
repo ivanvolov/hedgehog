@@ -1,34 +1,27 @@
 // SPDX-License-Identifier: Unlicense
 
-pragma solidity ^0.6.6;
-pragma experimental ABIEncoderV2;
+pragma solidity =0.7.6;
+pragma abicoder v2;
 
-import "@openzeppelin/contracts/math/Math.sol";
-import "@openzeppelin/contracts/math/SafeMath.sol";
-import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import {IUniswapV3MintCallback} from "@uniswap/v3-core/contracts/interfaces/callback/IUniswapV3MintCallback.sol";
-import "@uniswap/v3-core/contracts/interfaces/callback/IUniswapV3SwapCallback.sol";
-import {IUniswapV3Pool} from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
-import "@uniswap/v3-core/contracts/libraries/TickMath.sol";
-import "@uniswap/v3-periphery/contracts/libraries/LiquidityAmounts.sol";
-import "@uniswap/v3-periphery/contracts/libraries/PositionKey.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {IUniswapV3MintCallback} from "@uniswap/v3-core/contracts/interfaces/callback/IUniswapV3MintCallback.sol";
+import {IUniswapV3SwapCallback} from "@uniswap/v3-core/contracts/interfaces/callback/IUniswapV3SwapCallback.sol";
+import {IUniswapV3Pool} from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
+import {LiquidityAmounts} from "@uniswap/v3-periphery/contracts/libraries/LiquidityAmounts.sol";
+import {PositionKey} from "@uniswap/v3-periphery/contracts/libraries/PositionKey.sol";
+import {TickMath} from "@uniswap/v3-core/contracts/libraries/TickMath.sol";
 
-import "../../libraries/SharedEvents.sol";
-import "../../libraries/Constants.sol";
-import "../../libraries/StrategyMath.sol";
-
-import "./VaultMathTest.sol";
-import "./VaultMathOracle.sol";
+import "../libraries/SharedEvents.sol";
+import "../libraries/Constants.sol";
+import "../libraries/StrategyMath.sol";
+import {IPrbMathCalculus} from "../interfaces/IPrbMathCalculus.sol";
+import "./VaultParams.sol";
 
 import "hardhat/console.sol";
 
-// remove  due to not implementing this function
-contract VaultMath is IERC20, ERC20, VaultParams, ReentrancyGuard, IUniswapV3MintCallback, IUniswapV3SwapCallback {
-    // using SafeMath for uint256;
-    // using StrategyMath for uint256;
+contract VaultMath is VaultParams, ReentrancyGuard, IUniswapV3MintCallback, IUniswapV3SwapCallback {
+    using StrategyMath for uint256;
     using SafeERC20 for IERC20;
 
     /**
@@ -39,9 +32,6 @@ contract VaultMath is IERC20, ERC20, VaultParams, ReentrancyGuard, IUniswapV3Min
        @param _auctionTime auction duration (seconds)
        @param _minPriceMultiplier minimum auction price multiplier (0.95*1e18 = min auction price is 95% of twap)
        @param _maxPriceMultiplier maximum auction price multiplier (1.05*1e18 = max auction price is 105% of twap)
-       @param _targetEthShare targeted share of value in wETH (0.5*1e18 = 50% of total value(in usd) in wETH)
-       @param _targetUsdcShare targeted share of value in USDC (~0.2622*1e18 = 26.22% of total value(in usd) in USDC)
-       @param _targetOsqthShare targeted share of value in oSQTH (~0.2378*1e18 = 23.78% of total value(in usd) in oSQTH)
      */
     constructor(
         uint256 _cap,
@@ -49,37 +39,23 @@ contract VaultMath is IERC20, ERC20, VaultParams, ReentrancyGuard, IUniswapV3Min
         uint256 _rebalancePriceThreshold,
         uint256 _auctionTime,
         uint256 _minPriceMultiplier,
-        uint256 _maxPriceMultiplier,
-        uint256 _targetEthShare,
-        uint256 _targetUsdcShare,
-        uint256 _targetOsqthShare
+        uint256 _maxPriceMultiplier
+        address iprbCalculusLib //TODO: move to constants
     )
         public
-        ERC20("Hedging DL", "HDL")
         VaultParams(
             _cap,
             _rebalanceTimeThreshold,
             _rebalancePriceThreshold,
             _auctionTime,
             _minPriceMultiplier,
-            _maxPriceMultiplier,
-            _targetEthShare,
-            _targetUsdcShare,
-            _targetOsqthShare
+            _maxPriceMultiplier
         )
     {
-        vaultMathOracle = new VaultMathOracle();
-        vaultMathTest = new VaultMathTest(
-            _minPriceMultiplier,
-            _maxPriceMultiplier,
-            _targetEthShare,
-            _targetUsdcShare,
-            _targetOsqthShare
-        );
+        prbMathCalculus = IPrbMathCalculus(iprbCalculusLib);
     }
 
-    VaultMathOracle vaultMathOracle;
-    VaultMathTest vaultMathTest;
+    IPrbMathCalculus prbMathCalculus;
 
     /**
      * @dev Do zero-burns to poke a position on Uniswap so earned fees are
@@ -155,9 +131,6 @@ contract VaultMath is IERC20, ERC20, VaultParams, ReentrancyGuard, IUniswapV3Min
         );
 
         Constants.SharesInfo memory params = Constants.SharesInfo(
-            targetEthShare,
-            targetUsdcShare,
-            targetOsqthShare,
             totalSupply(),
             _amountEth,
             _amountUsdc,
@@ -169,7 +142,7 @@ contract VaultMath is IERC20, ERC20, VaultParams, ReentrancyGuard, IUniswapV3Min
             osqthAmount
         );
 
-        return vaultMathTest._calcSharesAndAmounts(params);
+        return __calcSharesAndAmounts(params);
     }
 
     function _getWithdrawAmounts(uint256 shares, uint256 totalSupply)
@@ -180,7 +153,7 @@ contract VaultMath is IERC20, ERC20, VaultParams, ReentrancyGuard, IUniswapV3Min
             uint256
         )
     {
-        console.log("totalSupply %s", totalSupply);
+        // console.log("totalSupply %s", totalSupply);
 
         uint256 unusedAmountEth = getBalance(Constants.weth).mul(shares).div(totalSupply);
         uint256 unusedAmountUsdc = getBalance(Constants.usdc).mul(shares).div(totalSupply);
@@ -349,10 +322,10 @@ contract VaultMath is IERC20, ERC20, VaultParams, ReentrancyGuard, IUniswapV3Min
      * @return auction trigger timestamp
      */
     function _isTimeRebalance() public view returns (bool, uint256) {
-        console.log("_isTimeRebalance => timeAtLastRebalance: %s", timeAtLastRebalance);
+        // console.log("_isTimeRebalance => timeAtLastRebalance: %s", timeAtLastRebalance);
         uint256 auctionTriggerTime = timeAtLastRebalance.add(rebalanceTimeThreshold);
 
-        console.log("_isTimeRebalance => block.timestamp: %s", block.timestamp);
+        // console.log("_isTimeRebalance => block.timestamp: %s", block.timestamp);
         return (block.timestamp >= auctionTriggerTime, auctionTriggerTime);
     }
 
@@ -385,112 +358,118 @@ contract VaultMath is IERC20, ERC20, VaultParams, ReentrancyGuard, IUniswapV3Min
      * @return isPriceInc true if price increased
      */
     function _checkAuctionType(uint256 _ethUsdcPrice) public view returns (bool isPriceInc) {
+        // console.log("_checkAuctionType");
+        // console.log(_ethUsdcPrice);
+        // console.log(ethPriceAtLastRebalance);
         isPriceInc = _ethUsdcPrice >= ethPriceAtLastRebalance ? true : false;
     }
 
-    /**
-     * @notice calculate how much of each token the strategy need to sell to achieve target proportion
-     * @param _currentEthUsdcPrice current wETH/USDC price
-     * @param _currentOsqthEthPrice current oSQTH/ETH price
-     * @param _auctionTriggerTime time when auction has started
-     * @param _isPriceInc true if price increased
-     * @return deltaEth amount of wETH to sell or buy
-     * @return deltaUsdc amount of USDC to sell or buy
-     * @return deltaOsqth amount of oSQTH to sell or buy
-     */
-    function _getDeltas(
-        uint256 _currentEthUsdcPrice,
-        uint256 _currentOsqthEthPrice,
-        uint256 _auctionTriggerTime,
-        bool _isPriceInc
-    )
-        public
-        view
-        returns (
-            uint256,
-            uint256,
-            uint256
-        )
-    {
-        (uint256 ethAmount, uint256 usdcAmount, uint256 osqthAmount) = _getTotalAmounts();
-        (uint256 _auctionEthUsdcPrice, uint256 _auctionOsqthEthPrice) = getAuctionPrices(
-            _auctionTriggerTime,
-            _currentEthUsdcPrice,
-            _currentOsqthEthPrice,
-            _isPriceInc
-        );
+    function _getPriceFromTick(int24 tick) internal view returns (uint256) {
+        //uint x = 162714639867323407420353073371;
 
-        Constants.DeltasInfo memory params = Constants.DeltasInfo(
-            _auctionOsqthEthPrice,
-            _auctionEthUsdcPrice,
-            usdcAmount,
-            ethAmount,
-            osqthAmount
-        );
-
-        return vaultMathTest._getDeltas(params);
+        console.log(uint256(TickMath.getSqrtRatioAtTick(tick)));
+        return prbMathCalculus.getPriceFromTick(TickMath.getSqrtRatioAtTick(tick));
     }
 
-    //@dev <tested>
-    /**
-     * @notice calculate auction price based on auction direction, start time and ETH/USDC price
-     * @param _auctionTriggerTime time when auction has started
-     * @param _currentEthUsdcPrice current ETH/USDC price
-     * @param _currentOsqthEthPrice current oSQTH/ETH price
-     * @param _isPriceInc true if price increased (determine auction direction)
-     */
-    function getAuctionPrices(
-        uint256 _auctionTriggerTime,
-        uint256 _currentEthUsdcPrice,
-        uint256 _currentOsqthEthPrice,
-        bool _isPriceInc
-    ) public view returns (uint256, uint256) {
-        Constants.AuctionInfo memory params = Constants.AuctionInfo(
-            _currentOsqthEthPrice,
-            _currentEthUsdcPrice,
-            auctionTime,
-            _auctionTriggerTime,
-            _isPriceInc,
-            block.timestamp
-        );
+    function _getPriceMultiplier(uint256 _auctionTriggerTime, bool _isPriceInc) internal view returns (uint256) {
+        uint256 auctionCompletionRatio = block.timestamp.sub(_auctionTriggerTime) >= auctionTime
+            ? 1e18
+            : (block.timestamp.sub(_auctionTriggerTime)).div(auctionTime);
 
-        return vaultMathTest._getAuctionPrices(params);
+        uint256 priceMultiplier;
+        if (_isPriceInc) {
+                priceMultiplier = minPriceMultiplier.add(
+                auctionCompletionRatio.mul(maxPriceMultiplier.sub(minPriceMultiplier))
+            );
+
+        } else {
+            priceMultiplier = maxPriceMultiplier.sub(
+                auctionCompletionRatio.mul(maxPriceMultiplier.sub(minPriceMultiplier))
+            );
+        }
+
+        return priceMultiplier;
     }
 
-    //@dev <tested>
-    /**
-     * @notice calculate lower and upper tick for liquidity provision on Uniswap
-     * @return ethUsdcLower tick lower for eth:usdc pool
-     * @return ethUsdcUpper tick upper for eth:usdc pool
-     * @return osqthEthLower tick lower for osqth:eth pool
-     * @return osqthEthUpper tick upper for osqth:eth pool
-     */
-    function _getBoundaries()
-        public
-        view
-        returns (
-            int24 ethUsdcLower,
-            int24 ethUsdcUpper,
-            int24 osqthEthLower,
-            int24 osqthEthUpper
-        )
-    {
-        int24 tickEthUsdc = getTick(Constants.poolEthUsdc);
-        int24 tickOsqthEth = getTick(Constants.poolEthOsqth);
+    function _getValue(
+        uint256 amountEth,
+        uint256 amountUsdc,
+        uint256 amountOsqth,
+        uint256 ethUsdcPrice,
+        uint256 osqthEthPrice
+    ) internal view returns (uint256) {
+        return (amountOsqth.mul(osqthEthPrice) + amountEth).mul(ethUsdcPrice) + amountUsdc.mul(1e30);
+    }
 
-        int24 tickFloorEthUsdc = _floor(tickEthUsdc, tickSpacingEthUsdc);
-        int24 tickFloorOsqthEth = _floor(tickOsqthEth, tickSpacingOsqthEth);
+    function _getAuctionParams(
+        uint256 _auctionTriggerTime
+    ) 
+    internal view returns (Constants.AuctionParams memory) {
+        (uint256 ethUsdcPrice, uint256 osqthEthPrice) = _getPrices();
 
-        int24 tickCeilEthUsdc = tickFloorEthUsdc + tickSpacingEthUsdc;
-        int24 tickCeilOsqthEth = tickFloorOsqthEth + tickSpacingOsqthEth;
+        bool _isPriceInc = _checkAuctionType(ethUsdcPrice);
+        uint256 priceMultiplier = _getPriceMultiplier(_auctionTriggerTime, _isPriceInc);
 
-        int24 ethUsdcThreshold = 1020;
-        int24 osqthEthThreshold = 1020;
+        //boundaries for auction prices (current price * multiplier)
+        Constants.Boundaries memory boundaries = _getBoundaries(
+            ethUsdcPrice.mul(priceMultiplier), 
+            osqthEthPrice.mul(priceMultiplier)
+        );
 
-        ethUsdcLower = tickFloorEthUsdc - ethUsdcThreshold;
-        ethUsdcUpper = tickCeilEthUsdc + ethUsdcThreshold;
-        osqthEthLower = tickFloorOsqthEth - osqthEthThreshold;
-        osqthEthUpper = tickCeilOsqthEth + osqthEthThreshold;
+        (uint256 ethBalance, uint256 usdcBalance, uint256 osqthBalance) = _getTotalAmounts();
+
+        //Value for LPing
+        uint256 totalValue=_getValue(
+            ethBalance,
+            usdcBalance,
+            osqthBalance,
+            ethUsdcPrice,
+            osqthEthPrice
+        ).mul(uint256(2e18) - priceMultiplier);
+
+        uint256 vm = priceMultiplier.mul(uint256(1e18)).div(priceMultiplier.add(uint256(1e18))); //Value multiplier
+
+        uint128 liquidityEthUsdc = prbMathCalculus.getLiquidityForValue(
+            totalValue.mul(vm),
+            ethUsdcPrice,
+            uint256(1e30).div(_getPriceFromTick(boundaries.ethUsdcUpper)), //проверить порядок
+            uint256(1e30).div(_getPriceFromTick(boundaries.ethUsdcLower))
+        );
+
+        uint128 liquidityOsqthEth = prbMathCalculus.getLiquidityForValue(
+            totalValue.mul(uint256(1e18) - vm).div(ethUsdcPrice),
+            osqthEthPrice,
+            uint256(1e18).div(_getPriceFromTick(boundaries.osqthEthLower)),
+            uint256(1e18).div(_getPriceFromTick(boundaries.osqthEthUpper))
+        );
+
+        (uint256 deltaEth, uint256 deltaUsdc, uint256 deltaOsqth) = __getDeltas(
+            boundaries,
+            liquidityEthUsdc,
+            liquidityOsqthEth,
+            ethBalance,
+            usdcBalance,
+            osqthBalance
+        );
+
+        return
+            Constants.AuctionParams(
+                _isPriceInc,
+                deltaEth,
+                deltaUsdc,
+                deltaOsqth,
+                boundaries,
+                liquidityEthUsdc,
+                liquidityOsqthEth
+            );
+    }
+
+    function _getPrices() internal view returns (uint256 ethUsdcPrice, uint256 osqthEthPrice) {
+        int24 ethUsdcTick = getTick(Constants.poolEthUsdc);
+        int24 osqthEthTick = getTick(Constants.poolEthOsqth);
+
+        ethUsdcPrice = uint256(1e30).div(_getPriceFromTick(ethUsdcTick));
+        osqthEthPrice = uint256(1e18).div(_getPriceFromTick(osqthEthTick));
     }
 
     //@dev <tested>
@@ -509,6 +488,12 @@ contract VaultMath is IERC20, ERC20, VaultParams, ReentrancyGuard, IUniswapV3Min
         uint256 amount1
     ) public view returns (uint128) {
         (uint160 sqrtRatioX96, , , , , , ) = IUniswapV3Pool(pool).slot0();
+        // console.log("_liquidityForAmounts");
+        // console.log(sqrtRatioX96);
+        // console.log(TickMath.getSqrtRatioAtTick(tickLower));
+        // console.log(TickMath.getSqrtRatioAtTick(tickUpper));
+        // console.log(amount0);
+        // console.log(amount1);
         return
             LiquidityAmounts.getLiquidityForAmounts(
                 sqrtRatioX96,
@@ -518,7 +503,7 @@ contract VaultMath is IERC20, ERC20, VaultParams, ReentrancyGuard, IUniswapV3Min
                 amount1
             );
     }
-
+    //TODO
     //@dev <tested>
     /// @dev Deposits liquidity in a range on the Uniswap pool.
     function _mintLiquidity(
@@ -527,6 +512,11 @@ contract VaultMath is IERC20, ERC20, VaultParams, ReentrancyGuard, IUniswapV3Min
         int24 tickUpper,
         uint128 liquidity
     ) public {
+        console.log("pool %s", pool);
+        console.log("tickLower %s", uint256(tickLower));
+        console.log("tickUpper %s", uint256(tickUpper));
+        console.log("liquidity %s", uint256(liquidity));
+
         if (liquidity > 0) {
             address token0 = pool == Constants.poolEthUsdc ? address(Constants.usdc) : address(Constants.weth);
             address token1 = pool == Constants.poolEthUsdc ? address(Constants.weth) : address(Constants.osqth);
@@ -551,16 +541,102 @@ contract VaultMath is IERC20, ERC20, VaultParams, ReentrancyGuard, IUniswapV3Min
         if (amount1Owed > 0) IERC20(token1).safeTransfer(msg.sender, amount1Owed);
     }
 
-    /// @dev Callback for Uniswap V3 pool.
+    // @dev Callback for Uniswap V3 pool.
     function uniswapV3SwapCallback(
         int256 amount0Delta,
         int256 amount1Delta,
         bytes calldata data
     ) external override {
-        // TODO: fix
-        // require(msg.sender == address(pool));
-        // if (amount0Delta > 0) Constants.weth.safeTransfer(msg.sender, uint256(amount0Delta));
-        // if (amount1Delta > 0) Constants.osqth.safeTransfer(msg.sender, uint256(amount1Delta));
+        (address pool, address token0, address token1) = abi.decode(data, (address, address, address));
+        console.log("!callback on %s: %s", token0, uint256(amount0Delta));
+        console.log("!callback on %s: %s", token1, uint256(amount1Delta));
+
+        require(msg.sender == pool);
+        if (amount0Delta > 0) IERC20(token0).safeTransfer(msg.sender, uint256(amount0Delta));
+        if (amount1Delta > 0) IERC20(token1).safeTransfer(msg.sender, uint256(amount1Delta));
+    }
+
+    // TODO: add to new function
+    //@dev <tested>
+    function __calcSharesAndAmounts(Constants.SharesInfo memory params)
+        public
+        view
+        returns (
+            uint256,
+            uint256,
+            uint256,
+            uint256
+        )
+    {
+        uint256 depositorValue = _getValue(
+            _amountEth,
+            _amountUsdc,
+            _amountOsqth,
+            params.ethUsdcPrice,
+            params.osqthEthPrice
+        );
+
+        if (params.totalSupply == 0) {
+            //deposit in a 50.79% eth, 24.35% usdc, 24.86% osqth proportion
+            return (
+                depositorValue,
+                depositorValue.mul(507924136843192000).div(params.ethUsdcPrice),
+                depositorValue.mul(243509747368953000).div(uint256(1e30)),
+                depositorValue.mul(248566115787854000).div(params.osqthEthPrice).div(params.ethUsdcPrice)
+                );
+        } else {
+            uint256 totalValue = getValue(
+                params.osqthAmount,
+                params.ethUsdcPrice,
+                params.ethAmount,
+                params.osqthEthPrice,
+                params.usdcAmount
+            );
+
+            return (
+                params.totalSupply.mul(depositorValue).div(totalValue),
+                params.ethAmount.mul(depositorValue).div(totalValue),
+                params.usdcAmount.mul(depositorValue).div(totalValue),
+                params.osqthAmount.mul(depositorValue).div(totalValue)
+            );
+        }
+    }
+
+    //@dev <tested>
+    function __getDeltas(
+        Constants.Boundaries memory boundaries,
+        uint128 liquidityEthUsdc,
+        uint128 liquidityOsqthEth,
+        uint256 ethBalance,
+        uint256 usdcBalance,
+        uint256 osqthBalance
+    )
+        public
+        view
+        returns (
+            uint256, //deltaEth
+            uint256, //deltaUsdc
+            uint256 //deltaOsqth
+        )
+    {
+        //scope
+        (uint256 ethAmount0, uint256 usdcAmount) = _amountsForLiquidity(
+            Constants.poolEthUsdc,
+            boundaries.ethUsdcLower,
+            boundaries.ethUsdcUpper,
+            liquidityEthUsdc
+        );
+        (uint256 ethAmount1, uint256 osqthAmount) = _amountsForLiquidity(
+            Constants.poolEthOsqth,
+            boundaries.osqthEthLower,
+            boundaries.osqthEthUpper,
+            liquidityOsqthEth
+        );
+        return (
+            ethBalance.suba(ethAmount0).suba(ethAmount1),
+            usdcBalance.suba(usdcAmount),
+            osqthBalance.suba(osqthAmount)
+        );
     }
 
     //@dev <tested>
@@ -570,5 +646,34 @@ contract VaultMath is IERC20, ERC20, VaultParams, ReentrancyGuard, IUniswapV3Min
         int24 compressed = tick / tickSpacing;
         if (tick < 0 && tick % tickSpacing != 0) compressed--;
         return compressed * tickSpacing;
+    }
+
+    function _getBoundaries(uint256 aEthUsdcPrice, uint256 aOsqthEthPrice)
+        public
+        view
+        returns (Constants.Boundaries memory)
+    {
+        (uint160 _aEthUsdcTick, uint160 _aOsqthEthTick) = prbMathCalculus.getTicks(aEthUsdcPrice, aOsqthEthPrice);
+
+        int24 aEthUsdcTick = TickMath.getTickAtSqrtRatio(_aEthUsdcTick);
+
+        int24 aOsqthEthTick = TickMath.getTickAtSqrtRatio(_aOsqthEthTick);
+
+        int24 tickFloorEthUsdc = _floor(aEthUsdcTick, tickSpacingEthUsdc);
+        int24 tickFloorOsqthEth = _floor(aEthUsdcTick, tickSpacingOsqthEth);
+
+        int24 tickCeilEthUsdc = tickFloorEthUsdc + tickSpacingEthUsdc;
+        int24 tickCeilOsqthEth = tickFloorOsqthEth + tickSpacingOsqthEth;
+
+        int24 ethUsdcThreshold = 960;
+        int24 osqthEthThreshold = 960;
+
+        return
+            Constants.Boundaries(
+                tickFloorEthUsdc - ethUsdcThreshold,
+                tickCeilEthUsdc + ethUsdcThreshold,
+                tickFloorOsqthEth - osqthEthThreshold,
+                tickCeilOsqthEth + osqthEthThreshold
+            );
     }
 }

@@ -1,24 +1,22 @@
 // SPDX-License-Identifier: Unlicense
 
-pragma solidity ^0.6.6;
+pragma solidity =0.7.6;
 
-import "@openzeppelin/contracts/math/Math.sol";
-import "@openzeppelin/contracts/math/SafeMath.sol";
 import {IUniswapV3Pool} from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
+import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import "../libraries/Constants.sol";
 
 import "hardhat/console.sol";
 
-abstract contract VaultParams {
-    // using SafeMath for uint256;
-
+abstract contract VaultParams is IERC20, ERC20 {
     //@dev Uniswap pools tick spacing
     int24 public immutable tickSpacingEthUsdc;
     int24 public immutable tickSpacingOsqthEth;
 
     //@dev twap period to use for rebalance calculations
-    uint32 public twapPeriod = 420;
+    uint32 public twapPeriod = 420 seconds;
 
     //@dev max amount of wETH that strategy accept for deposit
     uint256 public cap;
@@ -50,11 +48,6 @@ abstract contract VaultParams {
     uint256 public minPriceMultiplier;
     uint256 public maxPriceMultiplier;
 
-    //@dev targeted share of value in a certain token (0.5*100 = 50%)
-    uint256 public targetEthShare;
-    uint256 public targetUsdcShare;
-    uint256 public targetOsqthShare;
-
     /**
      * @notice strategy constructor
        @param _cap max amount of wETH that strategy accepts for deposits
@@ -63,9 +56,6 @@ abstract contract VaultParams {
        @param _auctionTime auction duration (seconds)
        @param _minPriceMultiplier minimum auction price multiplier (0.95*1e18 = min auction price is 95% of twap)
        @param _maxPriceMultiplier maximum auction price multiplier (1.05*1e18 = max auction price is 105% of twap)
-       @param _targetEthShare targeted share of value in wETH (0.5*1e18 = 50% of total value(in usd) in wETH)
-       @param _targetUsdcShare targeted share of value in USDC (~0.2622*1e18 = 26.22% of total value(in usd) in USDC)
-       @param _targetOsqthShare targeted share of value in oSQTH (~0.2378*1e18 = 23.78% of total value(in usd) in oSQTH)
      */
     constructor(
         uint256 _cap,
@@ -73,11 +63,8 @@ abstract contract VaultParams {
         uint256 _rebalancePriceThreshold,
         uint256 _auctionTime,
         uint256 _minPriceMultiplier,
-        uint256 _maxPriceMultiplier,
-        uint256 _targetEthShare,
-        uint256 _targetUsdcShare,
-        uint256 _targetOsqthShare
-    ) public {
+        uint256 _maxPriceMultiplier
+    ) ERC20("Hedging DL", "HDL") {
         cap = _cap;
 
         tickSpacingEthUsdc = IUniswapV3Pool(Constants.poolEthUsdc).tickSpacing();
@@ -88,9 +75,6 @@ abstract contract VaultParams {
         auctionTime = _auctionTime;
         minPriceMultiplier = _minPriceMultiplier;
         maxPriceMultiplier = _maxPriceMultiplier;
-        targetEthShare = _targetEthShare;
-        targetUsdcShare = _targetUsdcShare;
-        targetOsqthShare = _targetOsqthShare;
 
         governance = msg.sender;
 
@@ -125,9 +109,23 @@ abstract contract VaultParams {
         timeAtLastRebalance = _timeAtLastRebalance;
     }
 
+    // TODO: remove on main
+    /**
+     * Used to for unit testing
+     */
+    function setEthPriceAtLastRebalance(uint256 _ethPriceAtLastRebalance) public {
+        ethPriceAtLastRebalance = _ethPriceAtLastRebalance;
+    }
+
     /// @dev Casts uint256 to uint128 with overflow check.
     function _toUint128(uint256 x) internal pure returns (uint128) {
         assert(x <= type(uint128).max);
         return uint128(x);
+    }
+
+    /// @dev Casts uint256 to uint160 with overflow check.
+    function _toUint160(uint256 x) internal pure returns (uint160) {
+        assert(x <= type(uint160).max);
+        return uint160(x);
     }
 }

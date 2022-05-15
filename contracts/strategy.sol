@@ -1,24 +1,19 @@
 // SPDX-License-Identifier: Unlicense
 
-pragma solidity ^0.6.6;
-pragma experimental ABIEncoderV2;
+pragma solidity =0.7.6;
+pragma abicoder v2;
 
-import "@openzeppelin/contracts/math/Math.sol";
-import "@openzeppelin/contracts/math/SafeMath.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import {IUniswapV3Pool} from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 
 import "./interfaces/IVault.sol";
 import "./libraries/SharedEvents.sol";
 import "./libraries/Constants.sol";
 import "./libraries/StrategyMath.sol";
-
 import "./core/VaultAuction.sol";
 
 import "hardhat/console.sol";
 
 contract Vault is IVault, ReentrancyGuard, VaultAuction {
-    // using SafeMath for uint256;
     using StrategyMath for uint256;
 
     /**
@@ -29,9 +24,6 @@ contract Vault is IVault, ReentrancyGuard, VaultAuction {
        @param _auctionTime auction duration (seconds)
        @param _minPriceMultiplier minimum auction price multiplier (0.95*1e18 = min auction price is 95% of twap)
        @param _maxPriceMultiplier maximum auction price multiplier (1.05*1e18 = max auction price is 105% of twap)
-       @param _targetEthShare targeted share of value in wETH (0.5*1e18 = 50% of total value(in usd) in wETH)
-       @param _targetUsdcShare targeted share of value in USDC (~0.2622*1e18 = 26.22% of total value(in usd) in USDC)
-       @param _targetOsqthShare targeted share of value in oSQTH (~0.2378*1e18 = 23.78% of total value(in usd) in oSQTH)
      */
     constructor(
         uint256 _cap,
@@ -39,10 +31,8 @@ contract Vault is IVault, ReentrancyGuard, VaultAuction {
         uint256 _rebalancePriceThreshold,
         uint256 _auctionTime,
         uint256 _minPriceMultiplier,
-        uint256 _maxPriceMultiplier,
-        uint256 _targetEthShare,
-        uint256 _targetUsdcShare,
-        uint256 _targetOsqthShare
+        uint256 _maxPriceMultiplier
+        address iprbCalculusLib
     )
         public
         VaultAuction(
@@ -51,10 +41,8 @@ contract Vault is IVault, ReentrancyGuard, VaultAuction {
             _rebalancePriceThreshold,
             _auctionTime,
             _minPriceMultiplier,
-            _maxPriceMultiplier,
-            _targetEthShare,
-            _targetUsdcShare,
-            _targetOsqthShare
+            _maxPriceMultiplier
+            iprbCalculusLib
         )
     {}
 
