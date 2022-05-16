@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Unlicense
 
-pragma solidity =0.7.6;
+pragma solidity =0.8.4;
 pragma abicoder v2;
 
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
 import "./interfaces/IVault.sol";
 import "./libraries/SharedEvents.sol";
 import "./libraries/Constants.sol";
-import "./libraries/StrategyMath.sol";
+import "./libraries/math/StrategyMath.sol";
 import "./core/VaultAuction.sol";
 
 import "hardhat/console.sol";
@@ -31,8 +31,8 @@ contract Vault is IVault, ReentrancyGuard, VaultAuction {
         uint256 _rebalancePriceThreshold,
         uint256 _auctionTime,
         uint256 _minPriceMultiplier,
-        uint256 _maxPriceMultiplier
-        address iprbCalculusLib
+        uint256 _maxPriceMultiplier,
+        address uniswapAdaptorAddress
     )
         public
         VaultAuction(
@@ -41,8 +41,8 @@ contract Vault is IVault, ReentrancyGuard, VaultAuction {
             _rebalancePriceThreshold,
             _auctionTime,
             _minPriceMultiplier,
-            _maxPriceMultiplier
-            iprbCalculusLib
+            _maxPriceMultiplier,
+            uniswapAdaptorAddress
         )
     {}
 
@@ -69,14 +69,19 @@ contract Vault is IVault, ReentrancyGuard, VaultAuction {
             _amountOsqth
         );
 
+        console.log("_shares %s", _shares);
+        console.log("amountEth %s", amountEth);
+        console.log("amountUsdc %s", amountUsdc);
+        console.log("amountOsqth %s", amountOsqth);
+
         require(amountEth >= _amountEthMin, "Amount ETH min");
         require(amountUsdc >= _amountUsdcMin, "Amount USDC min");
         require(amountOsqth >= _amountOsqthMin, "Amount oSQTH min");
 
         //Pull in tokens
-        if (amountEth > 0) Constants.weth.transferFrom(msg.sender, address(this), _amountEth);
-        if (amountUsdc > 0) Constants.usdc.transferFrom(msg.sender, address(this), _amountUsdc);
-        if (amountOsqth > 0) Constants.osqth.transferFrom(msg.sender, address(this), _amountOsqth);
+        if (amountEth > 0) Constants.weth.transferFrom(msg.sender, address(this), amountEth);
+        if (amountUsdc > 0) Constants.usdc.transferFrom(msg.sender, address(this), amountUsdc);
+        if (amountOsqth > 0) Constants.osqth.transferFrom(msg.sender, address(this), amountOsqth);
 
         //Mint shares to user
         _mint(to, _shares);
@@ -107,9 +112,12 @@ contract Vault is IVault, ReentrancyGuard, VaultAuction {
 
         (uint256 amountEth, uint256 amountUsdc, uint256 amountOsqth) = _getWithdrawAmounts(shares, oldTotalSupply);
 
-        // console.log(amountEth);
-        // console.log(amountUsdc);
-        // console.log(amountOsqth);
+        console.log("amountEth %s", amountEth);
+        console.log("amountUsdc %s", amountUsdc);
+        console.log("amountOsqth %s", amountOsqth);
+        console.log("ballance weth %s", getBalance(Constants.weth));
+        console.log("ballance usdc %s", getBalance(Constants.usdc));
+        console.log("ballance osqth %s", getBalance(Constants.osqth));
 
         require(amountEth >= amountEthMin, "amountEthMin");
         require(amountUsdc >= amountUsdcMin, "amountUsdcMin");

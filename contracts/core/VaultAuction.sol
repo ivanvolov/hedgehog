@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Unlicense
 
-pragma solidity =0.7.6;
+pragma solidity =0.8.4;
 pragma abicoder v2;
 
 import "../interfaces/IVault.sol";
 import "../libraries/SharedEvents.sol";
 import "../libraries/Constants.sol";
-import "../libraries/StrategyMath.sol";
+import "../libraries/math/StrategyMath.sol";
 import "./VaultMath.sol";
 
 import "hardhat/console.sol";
@@ -29,8 +29,8 @@ contract VaultAuction is IAuction, VaultMath {
         uint256 _rebalancePriceThreshold,
         uint256 _auctionTime,
         uint256 _minPriceMultiplier,
-        uint256 _maxPriceMultiplier
-        address iprbCalculusLib
+        uint256 _maxPriceMultiplier,
+        address uniswapAdaptorAddress
     )
         public
         VaultMath(
@@ -39,8 +39,8 @@ contract VaultAuction is IAuction, VaultMath {
             _rebalancePriceThreshold,
             _auctionTime,
             _minPriceMultiplier,
-            _maxPriceMultiplier
-            iprbCalculusLib
+            _maxPriceMultiplier,
+            uniswapAdaptorAddress
         )
     {}
 
@@ -103,26 +103,12 @@ contract VaultAuction is IAuction, VaultMath {
         uint256 _amountUsdc,
         uint256 _amountOsqth
     ) internal {
-        Constants.AuctionParams memory params = _getAuctionParams(
-            _auctionTriggerTime
-        );
+        Constants.AuctionParams memory params = _getAuctionParams(_auctionTriggerTime);
 
-        _executeAuction(
-            params,             
-            _amountEth,
-            _amountUsdc,
-            _amountOsqth);
+        _executeAuction(params);
 
-        emit SharedEvents.Rebalance(msg.sender, _amountEth, _amountUsdc, _amountOsqth);
+        emit SharedEvents.Rebalance(msg.sender, params.deltaEth, params.deltaUsdc, params.deltaOsqth);
     }
-
-    // bool isPriceInc;
-    // uint256 deltaEth;
-    // uint256 deltaUsdc;
-    // uint256 deltaOsqth;
-    // Boundaries boundaries;
-    // uint128 liquidityEthUsdc;
-    // uint128 liquidityOsqthEth;
 
     /**
      * @notice execute auction based on the parameters calculated
@@ -132,41 +118,45 @@ contract VaultAuction is IAuction, VaultMath {
      * @dev place new positions in eth:usdc and osqth:eth pool
      */
     function _executeAuction(Constants.AuctionParams memory params) internal {
-        address _keeper = msg.sender; // what is it?
+        address _keeper = msg.sender;
+
+        (uint128 liquidityEthUsdc, , , , ) = _position(Constants.poolEthUsdc, orderEthUsdcLower, orderEthUsdcUpper);
         _burnAndCollect(
             Constants.poolEthUsdc,
             params.boundaries.ethUsdcLower,
             params.boundaries.ethUsdcUpper,
-            params.liquidityEthUsdc
+            liquidityEthUsdc
         );
+
+        (uint128 liquidityOsqthEth, , , , ) = _position(Constants.poolEthOsqth, orderOsqthEthLower, orderOsqthEthUpper);
         _burnAndCollect(
             Constants.poolEthOsqth,
             params.boundaries.osqthEthLower,
             params.boundaries.osqthEthUpper,
-            params.liquidityOsqthEth
+            liquidityOsqthEth
         );
 
+        console.log(params.isPriceInc);
         if (params.isPriceInc) {
             //pull in tokens from sender
-            Constants.usdc.transferFrom(_keeper, address(this), params.deltaUsdc);
-            Constants.weth.transfer(_keeper, params.deltaEth);
-            Constants.osqth.transfer(_keeper, params.deltaOsqth);
+            Constants.osqth.transferFrom(_keeper, address(this), params.deltaOsqth.add(10));
+            Constants.usdc.transfer(_keeper, params.deltaUsdc.sub(10));
+            Constants.weth.transfer(_keeper, params.deltaEth.sub(10));
         } else {
-            Constants.weth.transferFrom(_keeper, address(this), params.deltaEth);
-            Constants.osqth.transferFrom(_keeper, address(this), params.deltaOsqth);
-            Constants.usdc.transfer(_keeper, params.deltaUsdc);
+            Constants.weth.transferFrom(_keeper, address(this), params.deltaEth.add(10));
+            Constants.usdc.transferFrom(_keeper, address(this), params.deltaUsdc.add(10));
+            Constants.osqth.transfer(_keeper, params.deltaOsqth.sub(10));
         }
 
         _executeEmptyAuction(params);
     }
 
     function _executeEmptyAuction(Constants.AuctionParams memory params) internal {
-        // console.log("before first mint");
-        // console.log("ballance weth %s", getBalance(Constants.weth));
-        // console.log("ballance usdc %s", getBalance(Constants.usdc));
-        // console.log("ballance osqth %s", getBalance(Constants.osqth));
+        console.log("before first mint");
+        console.log("ballance weth %s", getBalance(Constants.weth));
+        console.log("ballance usdc %s", getBalance(Constants.usdc));
+        console.log("ballance osqth %s", getBalance(Constants.osqth));
 
-        //place orders on Uniswap
         _mintLiquidity(
             Constants.poolEthUsdc,
             params.boundaries.ethUsdcLower,
@@ -174,10 +164,10 @@ contract VaultAuction is IAuction, VaultMath {
             params.liquidityEthUsdc
         );
 
-        // console.log("before second mint");
-        // console.log("ballance weth %s", getBalance(Constants.weth));
-        // console.log("ballance usdc %s", getBalance(Constants.usdc));
-        // console.log("ballance osqth %s", getBalance(Constants.osqth));
+        console.log("before second mint");
+        console.log("ballance weth %s", getBalance(Constants.weth));
+        console.log("ballance usdc %s", getBalance(Constants.usdc));
+        console.log("ballance osqth %s", getBalance(Constants.osqth));
 
         _mintLiquidity(
             Constants.poolEthOsqth,
