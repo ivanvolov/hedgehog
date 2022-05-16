@@ -4,7 +4,7 @@ const { wethAddress, osqthAddress, usdcAddress } = require("./common");
 const { utils } = ethers;
 const { resetFork, getWETH, getUSDC, getOSQTH, getERC20Balance, approveERC20, assertWP } = require("./helpers");
 
-describe("Strategy rebalance sell", function () {
+describe("Strategy rebalance, sell with comissions", function () {
     let contract, library, contractHelper, tx, amount, rebalancer;
     it("Should deploy contract", async function () {
         await resetFork();
@@ -21,7 +21,7 @@ describe("Strategy rebalance sell", function () {
             "10",
             "900000000000000000",
             "1100000000000000000",
-            "0"
+            "100000"
         );
         await contract.deployed();
     });
@@ -32,6 +32,9 @@ describe("Strategy rebalance sell", function () {
         await contractHelper.deployed();
     });
 
+    // deltaEth 1372221087323376193
+    // deltaUsdc 20200033241
+    // deltaOsqth 19348960827455603626
     const wethInputR = "800348675119972960";
     const usdcInputR = "14065410226";
     const osqthInputR = "13136856056157859843";
@@ -43,6 +46,8 @@ describe("Strategy rebalance sell", function () {
 
         tx = await contract.connect(rebalancer).setEthPriceAtLastRebalance("3391393578000000000000");
         await tx.wait();
+
+        // await contract.setProtocolFee(100000);
 
         const _wethInput = wethInputR;
         const _usdcInput = usdcInputR;
@@ -155,9 +160,9 @@ describe("Strategy rebalance sell", function () {
 
         const amount = await contract._getTotalAmounts();
         console.log(amount);
-        expect(amount[0].toString()).to.equal("19503307000000000008");
-        expect(amount[1].toString()).to.equal("44471639450");
-        expect(amount[2].toString()).to.equal("21202509000000000009");
+        expect(amount[0].toString()).to.equal("17552976000000000008");
+        expect(amount[1].toString()).to.equal("40024475506");
+        expect(amount[2].toString()).to.equal("19082258000000000009");
     });
 
     it("swap", async function () {
@@ -226,6 +231,7 @@ describe("Strategy rebalance sell", function () {
         );
 
         const amount = await contract._getTotalAmounts();
+        console.log(amount);
         expect(amount[0].toString()).to.equal("0");
         expect(amount[1].toString()).to.equal("2");
         expect(amount[2].toString()).to.equal("1");
