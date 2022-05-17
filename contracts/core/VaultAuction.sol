@@ -30,7 +30,9 @@ contract VaultAuction is IAuction, VaultMath {
         uint256 _auctionTime,
         uint256 _minPriceMultiplier,
         uint256 _maxPriceMultiplier,
-        uint256 protocolFee
+        uint256 _protocolFee,
+        int24 _maxTDEthUsdc,
+        int24 _maxTDOsqthEth
     )
         VaultMath(
             _cap,
@@ -39,7 +41,9 @@ contract VaultAuction is IAuction, VaultMath {
             _auctionTime,
             _minPriceMultiplier,
             _maxPriceMultiplier,
-            protocolFee
+            _protocolFee,
+            _maxTDEthUsdc,
+            _maxTDOsqthEth
         )
     {}
 
@@ -58,13 +62,13 @@ contract VaultAuction is IAuction, VaultMath {
         uint256 amountOsqth
     ) external override nonReentrant {
         //check if rebalancing based on time threshold is allowed
-        (bool isTimeRebalanceAllowed, uint256 auctionTriggerTime) = _isTimeRebalance();
+        (bool isTimeRebalanceAllowed, uint256 auctionTriggerTime) = isTimeRebalance();
 
         require(isTimeRebalanceAllowed, "Time rebalance not allowed");
 
         _rebalance(keeper, auctionTriggerTime, amountEth, amountUsdc, amountOsqth);
 
-        //emit SharedEvents.TimeRebalance(keeper, auctionTriggerTime, amountEth, amountUsdc, amountOsqth);
+        emit SharedEvents.TimeRebalance(keeper, auctionTriggerTime, amountEth, amountUsdc, amountOsqth);
     }
 
     /** TODO
@@ -110,7 +114,7 @@ contract VaultAuction is IAuction, VaultMath {
     ) internal {
         Constants.AuctionParams memory params = _getAuctionParams(_auctionTriggerTime);
 
-        _executeAuction(keeper, params);
+        _executeAuction(keeper, params, _amountEth, _amountUsdc, _amountOsqth);
 
         emit SharedEvents.Rebalance(keeper, params.deltaEth, params.deltaUsdc, params.deltaOsqth);
     }
@@ -122,7 +126,13 @@ contract VaultAuction is IAuction, VaultMath {
      * @dev sell excess tokens to sender
      * @dev place new positions in eth:usdc and osqth:eth pool
      */
-    function _executeAuction(address _keeper, Constants.AuctionParams memory params) internal {
+    function _executeAuction(
+        address _keeper, 
+        Constants.AuctionParams memory params, 
+        uint256 _amountEth,
+        uint256 _amountUsdc,
+        uint256 _amountOsqth
+    ) internal {
         (uint128 liquidityEthUsdc, , , , ) = _position(Constants.poolEthUsdc, orderEthUsdcLower, orderEthUsdcUpper);
         (uint128 liquidityOsqthEth, , , , ) = _position(Constants.poolEthOsqth, orderOsqthEthLower, orderOsqthEthUpper);
 
@@ -142,20 +152,19 @@ contract VaultAuction is IAuction, VaultMath {
 
         console.log(params.isPriceInc);
         if (params.isPriceInc) {
-            //pull in tokens from sender
-            Constants.osqth.transferFrom(_keeper, address(this), params.deltaOsqth.add(10));
+            if (_amountOsqth >= params.deltaOsqth) Constants.osqth.transferFrom(_keeper, address(this), params.deltaOsqth.add(10));            
             Constants.usdc.transfer(_keeper, params.deltaUsdc.sub(10));
             Constants.weth.transfer(_keeper, params.deltaEth.sub(10));
         } else {
-            Constants.weth.transferFrom(_keeper, address(this), params.deltaEth.add(10));
-            Constants.usdc.transferFrom(_keeper, address(this), params.deltaUsdc.add(10));
+            if( _amountEth >= params.deltaEth) Constants.weth.transferFrom(_keeper, address(this), params.deltaEth.add(10));
+            if (_amountUsdc >= params.deltaUsdc) Constants.usdc.transferFrom(_keeper, address(this), params.deltaUsdc.add(10));            
             Constants.osqth.transfer(_keeper, params.deltaOsqth.sub(10));
         }
 
         console.log("before first mint");
-        console.log("ballance weth %s", getBalance(Constants.weth));
-        console.log("ballance usdc %s", getBalance(Constants.usdc));
-        console.log("ballance osqth %s", getBalance(Constants.osqth));
+        console.log("ballance weth %s", _getBalance(Constants.weth));
+        console.log("ballance usdc %s", _getBalance(Constants.usdc));
+        console.log("ballance osqth %s", _getBalance(Constants.osqth));
 
         _mintLiquidity(
             Constants.poolEthUsdc,
@@ -165,9 +174,9 @@ contract VaultAuction is IAuction, VaultMath {
         );
 
         console.log("before second mint");
-        console.log("ballance weth %s", getBalance(Constants.weth));
-        console.log("ballance usdc %s", getBalance(Constants.usdc));
-        console.log("ballance osqth %s", getBalance(Constants.osqth));
+        console.log("ballance weth %s", _getBalance(Constants.weth));
+        console.log("ballance usdc %s", _getBalance(Constants.usdc));
+        console.log("ballance osqth %s", _getBalance(Constants.osqth));
 
         _mintLiquidity(
             Constants.poolEthOsqth,

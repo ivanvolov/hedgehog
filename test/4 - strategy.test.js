@@ -21,7 +21,9 @@ describe("Strategy deposit", function () {
             "10",
             "900000000000000000",
             "1100000000000000000",
-            "0"
+            "0",
+            "1000",
+            "1000"
         );
         await contract.deployed();
     });
@@ -35,7 +37,7 @@ describe("Strategy deposit", function () {
     it("deposit", async function () {
         const amount = await contract
             .connect(depositor)
-            .calcSharesAndAmounts("19855700000000000000", "41326682043", "17933300000000000000");
+            ._calcSharesAndAmounts("19855700000000000000", "41326682043", "17933300000000000000");
         console.log(amount);
 
         const wethInput = amount[1].toString();

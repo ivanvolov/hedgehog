@@ -35,7 +35,9 @@ contract Vault is IVault, ReentrancyGuard, VaultAuction {
         uint256 _auctionTime,
         uint256 _minPriceMultiplier,
         uint256 _maxPriceMultiplier,
-        uint256 protocolFee
+        uint256 _protocolFee,
+        int24 _maxTDEthUsdc,
+        int24 _maxTDOsqthEth
     )
         VaultAuction(
             _cap,
@@ -44,7 +46,9 @@ contract Vault is IVault, ReentrancyGuard, VaultAuction {
             _auctionTime,
             _minPriceMultiplier,
             _maxPriceMultiplier,
-            protocolFee
+            _protocolFee,
+            _maxTDEthUsdc,
+            _maxTDOsqthEth
         )
     {}
 
@@ -65,7 +69,7 @@ contract Vault is IVault, ReentrancyGuard, VaultAuction {
         _poke(address(Constants.poolEthOsqth), orderOsqthEthLower, orderOsqthEthUpper);
 
         //Calculate shares to mint
-        (uint256 _shares, uint256 amountEth, uint256 amountUsdc, uint256 amountOsqth) = calcSharesAndAmounts(
+        (uint256 _shares, uint256 amountEth, uint256 amountUsdc, uint256 amountOsqth) = _calcSharesAndAmounts(
             _amountEth,
             _amountUsdc,
             _amountOsqth
@@ -118,9 +122,9 @@ contract Vault is IVault, ReentrancyGuard, VaultAuction {
         console.log("amountEth %s", amountEth);
         console.log("amountUsdc %s", amountUsdc);
         console.log("amountOsqth %s", amountOsqth);
-        console.log("ballance weth %s", getBalance(Constants.weth));
-        console.log("ballance usdc %s", getBalance(Constants.usdc));
-        console.log("ballance osqth %s", getBalance(Constants.osqth));
+        console.log("ballance weth %s", _getBalance(Constants.weth));
+        console.log("ballance usdc %s", _getBalance(Constants.usdc));
+        console.log("ballance osqth %s", _getBalance(Constants.osqth));
 
         require(amountEth >= amountEthMin, "amountEthMin");
         require(amountUsdc >= amountUsdcMin, "amountUsdcMin");
