@@ -549,6 +549,13 @@ contract VaultMath is VaultParams, ReentrancyGuard, IUniswapV3MintCallback, IUni
         int24 ethUsdcTick = getTick(Constants.poolEthUsdc);
         int24 osqthEthTick = getTick(Constants.poolEthOsqth);
 
+        (int24 twapEthUsdc, int24 twapOsqthEth) = _getTwap();
+
+        int24 deviation0 = ethUsdcTick > twapEthUsdc ? ethUsdcTick - twapEthUsdc : twapEthUsdc - ethUsdcTick;
+        int24 deviation1 = osqthEthTick > twapOsqthEth ? osqthEthTick - twapOsqthEth : twapOsqthEth - osqthEthTick;
+
+        require(deviation0 <= maxTDEthUsdc || deviation1 <= maxTDOsqthEth, "Max TWAP Deviation");
+
         ethUsdcPrice = uint256(1e30).div(_getPriceFromTick(ethUsdcTick));
         osqthEthPrice = uint256(1e18).div(_getPriceFromTick(osqthEthTick));
     }
@@ -557,6 +564,20 @@ contract VaultMath is VaultParams, ReentrancyGuard, IUniswapV3MintCallback, IUni
     /// @dev Fetches current price in ticks from Uniswap pool.
     function getTick(address pool) public view returns (int24 tick) {
         (, tick, , , , , ) = IUniswapV3Pool(pool).slot0();
+    }
+
+    function _getTwap() public view returns (int24, int24) {
+        uint32 _twapPeriod = twapPeriod;
+        uint32[] memory secondsAgo = new uint32[](2);
+        secondsAgo[0] = _twapPeriod;
+        secondsAgo[1] = 0;
+
+        (int56[] memory tickCumulativesEthUsdc, ) = Constants.poolEthUsdc.observe(secondsAgo);
+        (int56[] memory tickCumulativesEthOsqth, ) = Constants.poolEthOsqth.observe(secondsAgo);
+        return (
+            int24((tickCumulativesEthUsdc[1] - tickCumulativesEthUsdc[0]) / _twapPeriod),
+            int24((tickCumulativesEthOsqth[1] - tickCumulativesEthOsqth[0]) / _twapPeriod)
+                );
     }
 
     //@dev <tested>
@@ -729,6 +750,21 @@ contract VaultMath is VaultParams, ReentrancyGuard, IUniswapV3MintCallback, IUni
                 ((uint256(1e30).div(aEthUsdcPrice)).sqrt()).mul(79228162514264337593543950336)
             ),
             _toUint160(((uint256(1e18).div(aOsqthEthPrice)).sqrt()).mul(79228162514264337593543950336))
+        );
+    }
+
+    /// @dev Fetches time-weighted average price in ticks from Uniswap pool.
+    function _getTwap() public view returns (int24, int24) {
+        uint32 _twapPeriod = twapPeriod;
+        uint32[] memory secondsAgo = new uint32[](2);
+        secondsAgo[0] = _twapPeriod;
+        secondsAgo[1] = 0;
+
+        (int56[] memory tickCumulativesEthUsdc, ) = IUniswapV3Pool(Constants.poolEthUsdc).observe(secondsAgo);
+        (int56[] memory tickCumulativesEthOsqth, ) = IUniswapV3Pool(Constants.poolEthOsqth).observe(secondsAgo);
+        return (
+            int24((tickCumulativesEthUsdc[1] - tickCumulativesEthUsdc[0]) / _twapPeriod),
+            int24((tickCumulativesEthOsqth[1] - tickCumulativesEthOsqth[0]) / _twapPeriod)
         );
     }
 
