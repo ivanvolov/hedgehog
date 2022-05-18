@@ -3,15 +3,22 @@
 pragma solidity =0.8.4;
 pragma abicoder v2;
 
-import {IVault, IAuction} from "../interfaces/IVault.sol";
+import {IVaultTreasury} from "../interfaces/IVaultTreasury.sol";
+import {IVaultMath} from "../interfaces/IVaultMath.sol";
+import {IAuction} from "../interfaces/IVault.sol";
+import {IRegistry} from "../interfaces/IRegistry.sol";
+
 import {SharedEvents} from "../libraries/SharedEvents.sol";
+import {Faucet} from "../libraries/Faucet.sol";
 import {Constants} from "../libraries/Constants.sol";
-import {VaultMath} from "./VaultMath.sol";
+
+import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+
 import {PRBMathUD60x18} from "../libraries/math/PRBMathUD60x18.sol";
 
 import "hardhat/console.sol";
 
-contract VaultAuction is IAuction, VaultMath {
+contract VaultAuction is IAuction, Faucet, ReentrancyGuard {
     using PRBMathUD60x18 for uint256;
 
     /**
@@ -33,19 +40,7 @@ contract VaultAuction is IAuction, VaultMath {
         uint256 _protocolFee,
         int24 _maxTDEthUsdc,
         int24 _maxTDOsqthEth
-    )
-        VaultMath(
-            _cap,
-            _rebalanceTimeThreshold,
-            _rebalancePriceThreshold,
-            _auctionTime,
-            _minPriceMultiplier,
-            _maxPriceMultiplier,
-            _protocolFee,
-            _maxTDEthUsdc,
-            _maxTDOsqthEth
-        )
-    {}
+    ) Faucet(msg.sender) {}
 
     /**
      * @notice strategy rebalancing based on time threshold
@@ -62,7 +57,7 @@ contract VaultAuction is IAuction, VaultMath {
         uint256 amountOsqth
     ) external override nonReentrant {
         //check if rebalancing based on time threshold is allowed
-        (bool isTimeRebalanceAllowed, uint256 auctionTriggerTime) = isTimeRebalance();
+        (bool isTimeRebalanceAllowed, uint256 auctionTriggerTime) = IVaultMath(vaultMath).isTimeRebalance();
 
         require(isTimeRebalanceAllowed, "Time rebalance not allowed");
 
@@ -76,7 +71,6 @@ contract VaultAuction is IAuction, VaultMath {
      * @dev need to attach msg.value if buying oSQTH
      * @param keeper keeper address
      * @param _auctionTriggerTime the time when the price deviation threshold was exceeded and when the auction started
-     * @param _isPriceIncreased sell or buy auction, true for sell auction (strategy sell eth and usdc for osqth)
      * @param _amountEth amount of wETH to buy (strategy sell wETH both in sell and buy auction)
      * @param _amountUsdc amount of USDC to buy or sell (depending if price increased or decreased)
      * @param _amountOsqth amount of oSQTH to buy or sell (depending if price increased or decreased)
@@ -84,13 +78,12 @@ contract VaultAuction is IAuction, VaultMath {
     function priceRebalance(
         address keeper,
         uint256 _auctionTriggerTime,
-        bool _isPriceIncreased,
         uint256 _amountEth,
         uint256 _amountUsdc,
         uint256 _amountOsqth
     ) external nonReentrant {
         //check if rebalancing based on price threshold is allowed
-        require(_isPriceRebalance(_auctionTriggerTime), "Price rebalance not allowed");
+        require(IVaultMath(vaultMath)._isPriceRebalance(_auctionTriggerTime), "Price rebalance not allowed");
 
         _rebalance(keeper, _auctionTriggerTime, _amountEth, _amountUsdc, _amountOsqth);
 
@@ -112,9 +105,9 @@ contract VaultAuction is IAuction, VaultMath {
         uint256 _amountUsdc,
         uint256 _amountOsqth
     ) internal {
-        Constants.AuctionParams memory params = _getAuctionParams(_auctionTriggerTime);
+        Constants.AuctionParams memory params = IVaultMath(vaultMath)._getAuctionParams(_auctionTriggerTime);
 
-        _executeAuction(keeper, params, _amountEth, _amountUsdc, _amountOsqth);
+        _executeAuction(keeper, params);
 
         emit SharedEvents.Rebalance(keeper, params.deltaEth, params.deltaUsdc, params.deltaOsqth);
     }
@@ -126,66 +119,50 @@ contract VaultAuction is IAuction, VaultMath {
      * @dev sell excess tokens to sender
      * @dev place new positions in eth:usdc and osqth:eth pool
      */
-    function _executeAuction(
-        address _keeper, 
-        Constants.AuctionParams memory params, 
-        uint256 _amountEth,
-        uint256 _amountUsdc,
-        uint256 _amountOsqth
-    ) internal {
-        (uint128 liquidityEthUsdc, , , , ) = _position(Constants.poolEthUsdc, orderEthUsdcLower, orderEthUsdcUpper);
-        (uint128 liquidityOsqthEth, , , , ) = _position(Constants.poolEthOsqth, orderOsqthEthLower, orderOsqthEthUpper);
+    function _executeAuction(address _keeper, Constants.AuctionParams memory params) internal {
+        uint128 liquidityEthUsdc = IVaultMath(vaultMath)._positionLiquidityEthUsdc();
+        uint128 liquidityOsqthEth = IVaultMath(vaultMath)._positionLiquidityEthOsqth();
 
-        _burnAndCollect(
+        IVaultMath(vaultMath)._burnAndCollect(
             Constants.poolEthUsdc,
             params.boundaries.ethUsdcLower,
             params.boundaries.ethUsdcUpper,
             liquidityEthUsdc
         );
 
-        _burnAndCollect(
+        IVaultMath(vaultMath)._burnAndCollect(
             Constants.poolEthOsqth,
             params.boundaries.osqthEthLower,
             params.boundaries.osqthEthUpper,
             liquidityOsqthEth
         );
 
-        console.log(params.isPriceInc);
         if (params.isPriceInc) {
-            if (_amountOsqth >= params.deltaOsqth) Constants.osqth.transferFrom(_keeper, address(this), params.deltaOsqth.add(10));            
-            Constants.usdc.transfer(_keeper, params.deltaUsdc.sub(10));
-            Constants.weth.transfer(_keeper, params.deltaEth.sub(10));
+            //pull in tokens from sender
+            Constants.osqth.transferFrom(_keeper, address(IVaultTreasury(vaultTreasury)), params.deltaOsqth.add(10));
+            IVaultTreasury(vaultTreasury).transfer(Constants.usdc, _keeper, params.deltaUsdc.sub(10));
+            IVaultTreasury(vaultTreasury).transfer(Constants.weth, _keeper, params.deltaEth.sub(10));
         } else {
-            if( _amountEth >= params.deltaEth) Constants.weth.transferFrom(_keeper, address(this), params.deltaEth.add(10));
-            if (_amountUsdc >= params.deltaUsdc) Constants.usdc.transferFrom(_keeper, address(this), params.deltaUsdc.add(10));            
-            Constants.osqth.transfer(_keeper, params.deltaOsqth.sub(10));
+            Constants.weth.transferFrom(_keeper, address(IVaultTreasury(vaultTreasury)), params.deltaEth.add(10));
+            Constants.usdc.transferFrom(_keeper, address(IVaultTreasury(vaultTreasury)), params.deltaUsdc.add(10));
+            IVaultTreasury(vaultTreasury).transfer(Constants.osqth, _keeper, params.deltaOsqth.sub(10));
         }
 
-        console.log("before first mint");
-        console.log("ballance weth %s", _getBalance(Constants.weth));
-        console.log("ballance usdc %s", _getBalance(Constants.usdc));
-        console.log("ballance osqth %s", _getBalance(Constants.osqth));
-
-        _mintLiquidity(
+        IVaultTreasury(vaultTreasury).mintLiquidity(
             Constants.poolEthUsdc,
             params.boundaries.ethUsdcLower,
             params.boundaries.ethUsdcUpper,
             params.liquidityEthUsdc
         );
 
-        console.log("before second mint");
-        console.log("ballance weth %s", _getBalance(Constants.weth));
-        console.log("ballance usdc %s", _getBalance(Constants.usdc));
-        console.log("ballance osqth %s", _getBalance(Constants.osqth));
-
-        _mintLiquidity(
+        IVaultTreasury(vaultTreasury).mintLiquidity(
             Constants.poolEthOsqth,
             params.boundaries.osqthEthLower,
             params.boundaries.osqthEthUpper,
             params.liquidityOsqthEth
         );
 
-        (orderEthUsdcLower, orderEthUsdcUpper, orderOsqthEthLower, orderOsqthEthUpper) = (
+        IVaultMath(vaultMath).setTotalAmountsBoundaries(
             params.boundaries.ethUsdcLower,
             params.boundaries.ethUsdcUpper,
             params.boundaries.osqthEthLower,

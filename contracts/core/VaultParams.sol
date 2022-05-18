@@ -5,12 +5,14 @@ pragma solidity =0.8.4;
 import {IUniswapV3Pool} from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {Faucet} from "../libraries/Faucet.sol";
+import {IVaultParams} from "../interfaces/IVaultMath.sol";
 
 import "../libraries/Constants.sol";
 
 import "hardhat/console.sol";
 
-abstract contract VaultParams is IERC20, ERC20 {
+abstract contract VaultParams is Faucet, IVaultParams {
     //@dev Uniswap pools tick spacing
     int24 public immutable tickSpacingEthUsdc;
     int24 public immutable tickSpacingOsqthEth;
@@ -20,6 +22,10 @@ abstract contract VaultParams is IERC20, ERC20 {
 
     //@dev max amount of wETH that strategy accept for deposit
     uint256 public cap;
+
+    function getCap() external override returns (uint256) {
+        return cap;
+    }
 
     //@dev governance
     address public governance;
@@ -78,10 +84,12 @@ abstract contract VaultParams is IERC20, ERC20 {
         uint256 _maxPriceMultiplier,
         uint256 _protocolFee,
         int24 _maxTDEthUsdc,
-        int24 _maxTDOsqthEth
-    ) ERC20("Hedging DL", "HDL") {
-        cap = _cap;
+        int24 _maxTDOsqthEth,
+        address _governance
+    ) Faucet(msg.sender) {
+        governance = _governance;
 
+        cap = _cap;
         protocolFee = _protocolFee;
 
         tickSpacingEthUsdc = IUniswapV3Pool(Constants.poolEthUsdc).tickSpacing();
@@ -92,8 +100,6 @@ abstract contract VaultParams is IERC20, ERC20 {
         auctionTime = _auctionTime;
         minPriceMultiplier = _minPriceMultiplier;
         maxPriceMultiplier = _maxPriceMultiplier;
-
-        governance = msg.sender;
 
         timeAtLastRebalance = 0;
         maxTDEthUsdc = _maxTDEthUsdc;
@@ -140,20 +146,29 @@ abstract contract VaultParams is IERC20, ERC20 {
         protocolFee = _protocolFee;
     }
 
-    /**
-     * Used to for _getTotalAmounts unit testing
-     */
-    // TODO: remove on main
     function setTotalAmountsBoundaries(
         int24 _orderEthUsdcLower,
         int24 _orderEthUsdcUpper,
         int24 _orderOsqthEthLower,
         int24 _orderOsqthEthUpper
-    ) public {
+    ) public onlyVault {
         orderEthUsdcLower = _orderEthUsdcLower;
         orderEthUsdcUpper = _orderEthUsdcUpper;
         orderOsqthEthLower = _orderOsqthEthLower;
         orderOsqthEthUpper = _orderOsqthEthUpper;
+    }
+
+    function getTotalAmountsBoundaries()
+        public
+        view
+        returns (
+            int24,
+            int24,
+            int24,
+            int24
+        )
+    {
+        return (orderEthUsdcLower, orderEthUsdcUpper, orderOsqthEthLower, orderOsqthEthUpper);
     }
 
     /**
@@ -178,6 +193,11 @@ abstract contract VaultParams is IERC20, ERC20 {
 
     modifier onlyGovernance() {
         require(msg.sender == governance, "governance");
+        _;
+    }
+
+    modifier onlyVault() {
+        require(msg.sender == vault, "vault");
         _;
     }
 }
