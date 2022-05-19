@@ -5,25 +5,21 @@ pragma abicoder v2;
 
 import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {IVault, IAuction} from "../interfaces/IVault.sol";
-import {IVaultMath} from "../interfaces/IVaultMath.sol";
-import {IVaultTreasury} from "../interfaces/IVaultTreasury.sol";
+
+import {IVault} from "../interfaces/IVault.sol";
 
 import {SharedEvents} from "../libraries/SharedEvents.sol";
 import {Constants} from "../libraries/Constants.sol";
 import {PRBMathUD60x18} from "../libraries/math/PRBMathUD60x18.sol";
+
 import {VaultAuction} from "./VaultAuction.sol";
 
 import "hardhat/console.sol";
 
-contract Vault is IVault, IERC20, ERC20, ReentrancyGuard, VaultAuction {
+contract Vault is IVault, ReentrancyGuard, VaultAuction {
     using PRBMathUD60x18 for uint256;
     using SafeERC20 for IERC20;
-
-    address public governance;
 
     /**
      * @notice strategy constructor
@@ -43,10 +39,8 @@ contract Vault is IVault, IERC20, ERC20, ReentrancyGuard, VaultAuction {
         uint256 _maxPriceMultiplier,
         uint256 _protocolFee,
         int24 _maxTDEthUsdc,
-        int24 _maxTDOsqthEth,
-        address _governance
+        int24 _maxTDOsqthEth
     )
-        ERC20("Hedging DL", "HDL")
         VaultAuction(
             _cap,
             _rebalanceTimeThreshold,
@@ -58,18 +52,7 @@ contract Vault is IVault, IERC20, ERC20, ReentrancyGuard, VaultAuction {
             _maxTDEthUsdc,
             _maxTDOsqthEth
         )
-    {
-        governance = _governance;
-    }
-
-    function setGovernance(address _governance) external onlyGovernance {
-        governance = _governance;
-    }
-
-    modifier onlyGovernance() {
-        require(msg.sender == governance, "governance");
-        _;
-    }
+    {}
 
     function deposit(
         uint256 _amountEth,
@@ -83,25 +66,29 @@ contract Vault is IVault, IERC20, ERC20, ReentrancyGuard, VaultAuction {
         require(_amountEth > 0 || (_amountUsdc > 0 || _amountOsqth > 0), "ZA"); //Zero amount
         require(to != address(0) && to != address(this), "WA"); //Wrong address
 
-        IVaultMath(vaultMath)._pokeEthUsdc();
-        IVaultMath(vaultMath)._pokeEthOsqth();
+        //Poke positions so vault's current holdings are up to date
+        _poke(address(Constants.poolEthUsdc), orderEthUsdcLower, orderEthUsdcUpper);
+        _poke(address(Constants.poolEthOsqth), orderOsqthEthLower, orderOsqthEthUpper);
 
         //Calculate shares to mint
-        (uint256 _shares, uint256 amountEth, uint256 amountUsdc, uint256 amountOsqth) = IVaultMath(vaultMath)
-            ._calcSharesAndAmounts(_amountEth, _amountUsdc, _amountOsqth);
+        (uint256 _shares, uint256 amountEth, uint256 amountUsdc, uint256 amountOsqth) = _calcSharesAndAmounts(
+            _amountEth,
+            _amountUsdc,
+            _amountOsqth
+        );
 
         require(amountEth >= _amountEthMin, "Amount ETH min");
         require(amountUsdc >= _amountUsdcMin, "Amount USDC min");
         require(amountOsqth >= _amountOsqthMin, "Amount oSQTH min");
 
         //Pull in tokens
-        if (amountEth > 0) Constants.weth.transferFrom(msg.sender, vaultTreasury, amountEth);
-        if (amountUsdc > 0) Constants.usdc.transferFrom(msg.sender, vaultTreasury, amountUsdc);
-        if (amountOsqth > 0) Constants.osqth.transferFrom(msg.sender, vaultTreasury, amountOsqth);
+        if (amountEth > 0) Constants.weth.transferFrom(msg.sender, address(this), amountEth);
+        if (amountUsdc > 0) Constants.usdc.transferFrom(msg.sender, address(this), amountUsdc);
+        if (amountOsqth > 0) Constants.osqth.transferFrom(msg.sender, address(this), amountOsqth);
 
         //Mint shares to user
         _mint(to, _shares);
-        require(totalSupply() <= IVaultMath(vaultMath).getCap(), "Cap is reached");
+        require(totalSupply() <= cap, "Cap is reached");
 
         emit SharedEvents.Deposit(to, _shares);
         return _shares;
@@ -127,22 +114,34 @@ contract Vault is IVault, IERC20, ERC20, ReentrancyGuard, VaultAuction {
 
         _burn(msg.sender, shares);
 
-        (uint256 amountEth, uint256 amountUsdc, uint256 amountOsqth) = IVaultMath(vaultMath)._getWithdrawAmounts(
-            shares,
-            oldTotalSupply
-        );
+        (uint256 amountEth, uint256 amountUsdc, uint256 amountOsqth) = _getWithdrawAmounts(shares, oldTotalSupply);
 
         require(amountEth >= amountEthMin, "amountEthMin");
         require(amountUsdc >= amountUsdcMin, "amountUsdcMin");
         require(amountOsqth >= amountOsqthMin, "amountOsqthMin");
 
         //send tokens to user
-        //send tokens to user
-
-        if (amountEth > 0) IVaultTreasury(vaultTreasury).transfer(Constants.weth, msg.sender, amountEth);
-        if (amountUsdc > 0) IVaultTreasury(vaultTreasury).transfer(Constants.usdc, msg.sender, amountUsdc);
-        if (amountOsqth > 0) IVaultTreasury(vaultTreasury).transfer(Constants.osqth, msg.sender, amountOsqth);
+        if (amountEth > 0) Constants.weth.transfer(msg.sender, amountEth);
+        if (amountUsdc > 0) Constants.usdc.transfer(msg.sender, amountUsdc);
+        if (amountOsqth > 0) Constants.osqth.transfer(msg.sender, amountOsqth);
 
         emit SharedEvents.Withdraw(msg.sender, shares, amountEth, amountUsdc, amountOsqth);
+    }
+
+    /**
+     * @notice Used to collect accumulated protocol fees.
+     */
+    function collectProtocol(
+        uint256 amountUsdc,
+        uint256 amountEth,
+        uint256 amountOsqth,
+        address to
+    ) external override nonReentrant onlyGovernance {
+        accruedFeesUsdc = accruedFeesUsdc.sub(amountUsdc);
+        accruedFeesEth = accruedFeesEth.sub(amountEth);
+        accruedFeesOsqth = accruedFeesOsqth.sub(amountOsqth);
+        if (amountUsdc > 0) Constants.usdc.safeTransfer(to, amountUsdc);
+        if (amountEth > 0) Constants.weth.safeTransfer(to, amountEth);
+        if (amountOsqth > 0) Constants.osqth.safeTransfer(to, amountOsqth);
     }
 }

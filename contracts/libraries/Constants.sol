@@ -4,8 +4,8 @@ pragma solidity =0.8.4;
 import {IUniswapV3Pool} from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-import {IOracle} from "../interfaces/IOracle.sol";
-import {IUniswapMath} from "../libraries/uniswap/IUniswapMath.sol";
+import {IOracle} from "./uniswap/IOracle.sol";
+import {IUniswapMath} from "./uniswap/IUniswapMath.sol";
 
 library Constants {
     //@dev ETH-USDC Uniswap pool
@@ -45,7 +45,7 @@ library Constants {
     }
 
     struct AuctionParams {
-        bool isPriceInc;
+        uint256 priceMultiplier;
         uint256 deltaEth;
         uint256 deltaUsdc;
         uint256 deltaOsqth;
