@@ -54,7 +54,15 @@ const resetFork = async () => {
     });
 };
 
+const logBlock = async () => {
+    const blockNumBefore = await ethers.provider.getBlockNumber();
+    const blockBefore = await ethers.provider.getBlock(blockNumBefore);
+    const timestampBefore = blockBefore.timestamp;
+    console.log(blockNumBefore, timestampBefore);
+};
+
 module.exports = {
+    logBlock,
     resetFork,
     assertWP,
     toWEIS,
