@@ -3,6 +3,8 @@ const { utils } = ethers;
 const csv = require("csvtojson");
 const path = require("path");
 const { getResetParams } = require("../../hardhat.helpers");
+const { wethAddress, osqthAddress, usdcAddress } = require("../common");
+const { getERC20Balance } = require('./tokenHelpers');
 
 const loadTestDataset = async (name) => {
     const csvFilePath = path.join(__dirname, "../ds/", `${name}.csv`);
@@ -33,8 +35,6 @@ const assertWP = (a, b, pres = 4, num = 18) => {
 
     if (getTail(a, pres, num) == getTail(b, pres, num)) return true;
 
-    // TODO: make gloabl settings during test session
-
     console.log("current  >>>", utils.formatUnits(a, num));
     console.log("current  >>>", a);
     console.log("expected >>>", utils.formatUnits(b, num));
@@ -61,7 +61,14 @@ const logBlock = async () => {
     console.log(blockNumBefore, timestampBefore);
 };
 
+const logBalance = async (address) => {
+    console.log(await getERC20Balance(address, wethAddress));
+    console.log(await getERC20Balance(address, usdcAddress));
+    console.log(await getERC20Balance(address, osqthAddress));
+}
+
 module.exports = {
+    logBalance,
     logBlock,
     resetFork,
     assertWP,

@@ -16,6 +16,7 @@ import {SharedEvents} from "../libraries/SharedEvents.sol";
 import {Constants} from "../libraries/Constants.sol";
 import {PRBMathUD60x18} from "../libraries/math/PRBMathUD60x18.sol";
 import {Faucet} from "../libraries/Faucet.sol";
+import {IUniswapMath} from "../libraries/uniswap/IUniswapMath.sol";
 
 import "hardhat/console.sol";
 
@@ -35,6 +36,7 @@ contract VaultMath is ReentrancyGuard, Faucet {
      */
     function getTotalAmounts()
         public
+        view
         onlyVault
         returns (
             uint256,
@@ -67,7 +69,7 @@ contract VaultMath is ReentrancyGuard, Faucet {
         address pool,
         int24 tickLower,
         int24 tickUpper
-    ) internal returns (uint256, uint256) {
+    ) internal view returns (uint256, uint256) {
         (uint128 liquidity, , , uint128 tokensOwed0, uint128 tokensOwed1) = IVaultTreasury(vaultTreasury).position(
             pool,
             tickLower,
@@ -175,7 +177,7 @@ contract VaultMath is ReentrancyGuard, Faucet {
      * @return true if time hedging is allowed
      * @return auction trigger timestamp
      */
-    function isTimeRebalance() public returns (bool, uint256) {
+    function isTimeRebalance() public view returns (bool, uint256) {
         uint256 auctionTriggerTime = IVaultStorage(vaultStotage).timeAtLastRebalance().add(
             IVaultStorage(vaultStotage).rebalanceTimeThreshold()
         );
@@ -189,7 +191,7 @@ contract VaultMath is ReentrancyGuard, Faucet {
      * @param _auctionTriggerTime timestamp when auction started
      * @return true if hedging is allowed
      */
-    function _isPriceRebalance(uint256 _auctionTriggerTime) public returns (bool) {
+    function _isPriceRebalance(uint256 _auctionTriggerTime) public view returns (bool) {
         if (_auctionTriggerTime < IVaultStorage(vaultStotage).timeAtLastRebalance()) return false;
         uint32 secondsToTrigger = uint32(block.timestamp - _auctionTriggerTime);
         uint256 ethUsdcPriceAtTrigger = Constants.oracle.getHistoricalTwap(
@@ -210,11 +212,11 @@ contract VaultMath is ReentrancyGuard, Faucet {
      * @param tick tick that need to be converted to price
      * @return token price
      */
-    function getPriceFromTick(int24 tick) public pure returns (uint256) {
+    function getPriceFromTick(int24 tick) public view returns (uint256) {
         //const = 2^192
         uint256 const = 6277101735386680763835789423207666416102355444464034512896;
 
-        uint160 sqrtRatioAtTick = Constants.uniswapMath.getSqrtRatioAtTick(tick);
+        uint160 sqrtRatioAtTick = IUniswapMath(uniswapMath).getSqrtRatioAtTick(tick);
         return (uint256(sqrtRatioAtTick)).pow(uint256(2e18)).mul(1e36).div(const);
     }
 
@@ -223,7 +225,7 @@ contract VaultMath is ReentrancyGuard, Faucet {
      * @param _auctionTriggerTime timestamp when auction started
      * @return priceMultiplier
      */
-    function getPriceMultiplier(uint256 _auctionTriggerTime) external onlyVault returns (uint256) {
+    function getPriceMultiplier(uint256 _auctionTriggerTime) external view onlyVault returns (uint256) {
         uint256 maxPriceMultiplier = IVaultStorage(vaultStotage).maxPriceMultiplier();
         uint256 minPriceMultiplier = IVaultStorage(vaultStotage).minPriceMultiplier();
         uint256 auctionTime = IVaultStorage(vaultStotage).auctionTime();
@@ -235,7 +237,7 @@ contract VaultMath is ReentrancyGuard, Faucet {
         return minPriceMultiplier.add(auctionCompletionRatio.mul(maxPriceMultiplier.sub(minPriceMultiplier)));
     }
 
-    function getPrices() public onlyVault returns (uint256 ethUsdcPrice, uint256 osqthEthPrice) {
+    function getPrices() public view onlyVault returns (uint256 ethUsdcPrice, uint256 osqthEthPrice) {
         //Get current prices in ticks
         int24 ethUsdcTick = _getTick(Constants.poolEthUsdc);
         int24 osqthEthTick = _getTick(Constants.poolEthOsqth);
@@ -273,17 +275,17 @@ contract VaultMath is ReentrancyGuard, Faucet {
         (uint160 sqrtRatioX96, , , , , , ) = IUniswapV3Pool(pool).slot0();
 
         return
-            Constants.uniswapMath.getLiquidityForAmounts(
+            IUniswapMath(uniswapMath).getLiquidityForAmounts(
                 sqrtRatioX96,
-                Constants.uniswapMath.getSqrtRatioAtTick(tickLower),
-                Constants.uniswapMath.getSqrtRatioAtTick(tickUpper),
+                IUniswapMath(uniswapMath).getSqrtRatioAtTick(tickLower),
+                IUniswapMath(uniswapMath).getSqrtRatioAtTick(tickUpper),
                 amount0,
                 amount1
             );
     }
 
     /// @dev Fetches time-weighted average price in ticks from Uniswap pool.
-    function _getTwap() internal returns (int24, int24) {
+    function _getTwap() internal view returns (int24, int24) {
         uint32 _twapPeriod = IVaultStorage(vaultStotage).twapPeriod();
         uint32[] memory secondsAgo = new uint32[](2);
         secondsAgo[0] = _twapPeriod;
@@ -308,7 +310,7 @@ contract VaultMath is ReentrancyGuard, Faucet {
     }
 
     /**
-     * @notice calculate value in usd terms
+     * @notice calculate value in ETH terms
      */
     function getValue(
         uint256 amountEth,
@@ -317,7 +319,7 @@ contract VaultMath is ReentrancyGuard, Faucet {
         uint256 ethUsdcPrice,
         uint256 osqthEthPrice
     ) public view onlyVault returns (uint256) {
-        return (amountOsqth.mul(osqthEthPrice) + amountEth).mul(ethUsdcPrice) + amountUsdc.mul(1e30);
+        return (amountEth + amountOsqth.mul(osqthEthPrice) + amountUsdc.mul(1e30).div(ethUsdcPrice));
     }
 
     /// @dev Casts uint256 to uint128 with overflow check.
