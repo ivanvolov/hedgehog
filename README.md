@@ -46,6 +46,8 @@ npm i
 
 # Testing
 
+Sometimes tests are not running correctly from the first try, so run it twice. It is happening due to hardhat internal issues, and I don't have time to fix it.
+
 If you'd like to run tests on the local environment, you might want to run the following command:
 
 ```
